@@ -1,0 +1,111 @@
+AYUDA SCRIPT DEPLOYMENT
+--------------------------------------------
+
+El script de deployment realiza los siguientes pasos:
+
+- "doGetLock" ( solo en deploy -force )
+Obtiene un bloqueo exclusivo para evitar que varios deployments se ejecuten 
+al mismo tiempo. El archivo de lock está en $LOCK_FILE . Si alguna vez muere 
+un deployment a medias es probableque este archivo se quede en el sistema, 
+y habrá que eliminarlo a mano
+
+
+- "doUpdateRepository" 
+Descarga los archivos más recientes del repositorio de código en github 
+en el directorio $LOCAL_GIT_REPO_DIR. Este paso también limpia los archivos
+que se hubieran modificado en este directorio.
+
+
+- "doResetPermissions"
+Resetea los permisos de los archivos en $LOCAL_GIT_REPO_DIR para asegurar
+que tras hacer el rsync al directory root de Magento no habrá problemas
+en cuanto a accesos. Por defecto setea 664 a archivos, 775 a directorios y
+777 a ciertos recursos que necesitan más flexibilidad.
+
+
+- "doCloseWebsite"
+Al desplegar nuevo código de la aplicación, muchas veces se 
+incluyen querys sobre la base de datos, que creantablas, alteran, o 
+modifican datos. Para evitar que haya varias peticiones que lancen 
+todos esos comandos, surge la necesidad de cerrar el acceso a la 
+web durante deployments, y realizar un unico hit que ejecute todo esto
+antes de abrir la web al público. 
+Este paso hace que Magento devuelva un error 500 por defecto a todas las peticiones.
+en el bootstrap de nuestra aplicación hay un check para comprobar si existe
+el archivo maintenance.flag en el directory root de Magento, y si existe
+automáticamente devuelve error 500 a todo. Con esto nos aseguramos de que
+nadie accede a la web durante el deployment. 
+
+
+- "doDisableCompilation"
+En Magento hay unos 40.000 archivos , y existe un sistema de fallback 
+para la búsqueda de archivos cuando se hace un 'include' . Para evitar que
+el sistema tenga que patearse a cada hit todo el sistema de archivos
+existe la posibilidad de 'compilar' todo el código de magento en un
+único directorio, y así mejorar el performance. Esto hace que al modificar
+los archivos de código, haya que recompilarlos de nuevo para que los 
+cambios se vean reflejados.
+Esta opción lo que hace es deshabilitar dicha compilación de código.
+
+
+- "doDeployFiles"
+Este paso consiste en realizar un rsync desde $LOCAL_GIT_REPO_DIR a
+$MAGE_ROOT_DIR ,eliminando los archivos que se hayan eliminado, y
+añadiendo y actualizando los existentes.
+
+
+- "doFlushDataCache"
+Magento tiene un sistema de cacheado de diferentes niveles internos,
+tanto datos , configuración y merge de JS/CSS . En este paso lo que 
+hacemos es limpiar dicha caché para que se actualice con los eventuales
+cambios introducidos por el deployment.
+
+
+- "doFlushFPC"
+Este paso limpia la caché de Full Page de magento. Está por separado 
+porque es la más optima, y es habitual limpiar las cachés internas primero
+y luego limpiar la FPC . incluso a veces, limpiar la FPC es suficiente
+para refrescar los contenidos.
+
+
+- "doEnableCompilation"
+Este paso vuelve a compilar todos los archivos de Magento. Es el paso
+más pesado y puede llevar varios minutos.
+
+
+- "doCleanZendOptimizer"
+En este paso lanzamos un par de hits a los frontales mediante curl
+sobre el script $SCRIPT_TO_CLEAN_ZEND_OPTIMIZER para refrescar la
+zend optimizer+ cache.
+
+
+- "do1stHit"
+En este paso lanzamos el primer hit a la web para que cachee toda la
+configuración y datos básicos. Esto suele ser muy costoso y suele producir
+interbloqueos, por eso es importante ante un flusheado de caché que aseguremos
+que un unico proceso lanza el hit y rellena la caché de nuevo. Si sucede un
+flush de caché y la web está abierta, con multiples clientes concurrentes
+es muy probable que los frontales mueran. Comenzarán a swapear por la multitud
+de hebras que quedarán bloqueadas consumiendo memoria. 
+
+
+- "doFPCWarmup"
+Este paso consiste en lanzar un script en background que hace crawling sobre
+todas las páginas de la web, populando así la FPC
+
+
+- "doOpenWebsite"
+Este paso elimina el flag creado que bloqueaba la web, y por tanto dejamos de 
+mostrar error 500 a todas las peticiones.
+
+
+- "doReleaseLock" ( solo en deploy - force )
+Este paso elimina el bloqueo obtenido para evitar multiples deployments
+concurrentes.
+
+
+----------------
+21/12/2011
+Fernando Palomo García <fernando@bluejay.es> 
+
+
